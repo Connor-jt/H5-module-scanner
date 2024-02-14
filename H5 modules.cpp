@@ -44,6 +44,8 @@ void FindModules(const std::wstring& directory) {
 }
 
 
+static char bsp_mesh_resource_signature[] = { 0x48, 0x0D, 0x2A, 0x4D, 0x2E, 0xCE, 0x90, 0x66, 0x60, 0x60, 0xF0, 0x0C, 0xD8, 0x78, 0xCF, 0xA2 };
+
 class h5_module {
 public:
     module_header* header = nullptr;
@@ -52,7 +54,7 @@ public:
     uint32_t* resource_indexes = nullptr;
     block_header* blocks = nullptr;
     ifstream module_reader = {};
-    //uint64_t module_metadata_size; // used to offset when referencing datablock offsets
+    uint64_t data_start_offset;
     //Oodle* unpacker;
     h5_module(string path) {
         // open module file
@@ -75,7 +77,7 @@ public:
         if (header->Version != 27 && header->Version != 23) throw exception("module version does not match target version");
 
         // read file partition
-        files = (module_file*)(new char[module_file_size * header->FileCount]);
+        files = new module_file[module_file_size * header->FileCount];
         module_reader.read((char*)files, module_file_size * header->FileCount);
 
         // read string table
@@ -87,11 +89,13 @@ public:
         module_reader.read((char*)resource_indexes, 4 * header->ResourceCount);
 
         // read blocks partition
-        //blocks = new block_header[header->BlockCount];
-        //module_reader.read((char*)blocks, block_header_size * header->BlockCount);
+        blocks = new block_header[header->BlockCount];
+        module_reader.read((char*)blocks, block_header_size * header->BlockCount);
 
-        //uint32_t file_offset = module_header_size + (module_file_size * header->FileCount) + (4 * header->ResourceCount) + (block_header_size * header->BlockCount);
-        //module_metadata_size = (file_offset / 0x1000 + 1) * 0x1000; // for some reason 343 aligns the metadata by 0x1000
+        data_start_offset = module_header_size + (module_file_size * header->FileCount) + header->StringsSize + (4 * header->ResourceCount) + (block_header_size * header->BlockCount);
+        //uint32 module_metadata_size = (file_offset / 0x1000 + 1) * 0x1000; // for some reason 343 aligns the metadata by 0x1000
+
+
 
         //module_reader.release();
     }
@@ -99,8 +103,25 @@ public:
         delete header;
         delete[] files;
         delete[] string_table;
-        //delete[] resource_indexes;
-        //delete[] blocks;
+        delete[] resource_indexes;
+        delete[] blocks;
+    }
+
+    bool compare(uint64_t offset) {
+        // go to offset
+        module_reader.seekg(data_start_offset + offset, ios::beg);
+        // start comparing data
+        char* current_byte = new char;
+        for (int i = 0; i < sizeof(bsp_mesh_resource_signature); i++) {
+            module_reader.read(current_byte, 1);
+            if (current_byte == nullptr) goto fail;
+            if (*current_byte != bsp_mesh_resource_signature[i]) goto fail;
+        }
+        delete current_byte;
+        return true;
+    fail:
+        delete current_byte;
+        return false;
     }
 };
 
@@ -111,8 +132,6 @@ int main()
     int test1 = sizeof(module_header);
     int test2 = sizeof(module_file);
     int test3 = sizeof(block_header);
-
-
     assert(sizeof(module_header) == module_header_size, "");
     assert(sizeof(module_file) == module_file_size, "");
     assert(sizeof(block_header) == block_header_size, "");
@@ -147,8 +166,11 @@ int main()
             if (tag.AssetId == 0xDE2F30A8D75E9D0C || tag.AssetChecksum == 0xDE2F30A8D75E9D0C) {
                 cout << "found checksum match: TagIndex '" << i << "' Module '" << mod_path << "' tag '" << std::string(mod_file->string_table+tag.NameOffset) << "'\n\n";
             }
+            if (mod_file->compare(tag.get_dataoffset())) {
+                cout << "found data match: TagIndex '" << i << "' Module '" << mod_path << "' tag '" << std::string(mod_file->string_table + tag.NameOffset) << "'\n\n";
+            }
         }
-        delete mod_file; // heck you john c++, no matter what i do to the code it just comes up with a new error EVERY SINGLE TIME about why i cant possibly close this dumb thing 
+        delete mod_file;
     }
 }
 

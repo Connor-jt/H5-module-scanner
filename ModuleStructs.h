@@ -31,12 +31,12 @@ namespace ModuleStructs {
 
     const char flag2_UseHd1 = 0b0000000000000001; // if this is checked, then its likely that the tag resides in the hd1 file (if that exists)
     struct module_file {
-     /*   uint64_t get_dataoffset() {
+        uint64_t get_dataoffset() {
             return DataOffset_and_flags & 0x0000FFFFFFFFFFFF;
         }
         uint16_t get_dataflags() {
             return (uint16_t)(DataOffset_and_flags >> 48);
-        }*/
+        }
 
         uint32_t    NameOffset;       
         int32_t     ParentIndex;      // "Used with resources to point back to the parent file. -1 = none"
